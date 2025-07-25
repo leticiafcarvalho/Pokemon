@@ -3,12 +3,20 @@ import { getPokemonList, getPokemon } from '../services/pokemonService';
 import PokemonCard from './PokemonCard';
 
 function PokemonList({ searchTerm }) {
-  const [pokemons, setPokemons] = useState([]); // lista paginada
+  const [pokemons, setPokemons] = useState([]); // pokémons com detalhes
+  const [allPokemonNames, setAllPokemonNames] = useState([]); // todos nomes (para busca parcial)
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searchResults, setSearchResults] = useState(null);
 
-  // Carregar pokemons da lista paginada
+  // 🔹 Carrega todos nomes uma vez (apenas name/url)
+  const loadAllPokemonNames = async () => {
+    if (allPokemonNames.length > 0) return; // já carregou
+    const all = await getPokemonList(0, 1302); // pega todos da API (somente nomes/urls)
+    setAllPokemonNames(all);
+  };
+
+  // 🔹 Carrega lista paginada com detalhes
   const loadPokemons = async () => {
     setLoading(true);
     try {
@@ -16,12 +24,11 @@ function PokemonList({ searchTerm }) {
       const details = await Promise.all(list.map((p) => getPokemon(p.name)));
 
       // evita duplicados
-      setPokemons((prev) => {
-        const newList = [...prev, ...details];
-        return newList.filter(
+      setPokemons((prev) =>
+        [...prev, ...details].filter(
           (p, index, self) => index === self.findIndex((x) => x.id === p.id)
-        );
-      });
+        )
+      );
 
       setOffset((prev) => prev + 30);
     } catch (error) {
@@ -30,11 +37,13 @@ function PokemonList({ searchTerm }) {
     setLoading(false);
   };
 
+  // Carregamento inicial
   useEffect(() => {
     loadPokemons();
+    loadAllPokemonNames();
   }, []);
 
-  // Efeito de busca
+  // Busca
   useEffect(() => {
     if (!searchTerm) {
       setSearchResults(null);
@@ -43,20 +52,24 @@ function PokemonList({ searchTerm }) {
 
     const term = searchTerm.toLowerCase();
 
-    // busca parcial na lista carregada
-    const localMatches = pokemons.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.id.toString() === term
+    // 🔹 Busca parcial pelos nomes de todos Pokémon
+    const matches = allPokemonNames.filter((p) =>
+      p.name.toLowerCase().includes(term)
     );
 
-    // se encontrou na lista local, usa ela
-    if (localMatches.length > 0) {
-      setSearchResults(localMatches);
+    if (matches.length > 0) {
+      // carrega detalhes de todos os encontrados
+      const fetchDetails = async () => {
+        setLoading(true);
+        const details = await Promise.all(matches.map((p) => getPokemon(p.name)));
+        setSearchResults(details);
+        setLoading(false);
+      };
+      fetchDetails();
       return;
     }
 
-    // senão tenta buscar diretamente na API
+    // 🔹 Se não achou parcial, tenta buscar exato (nome/id)
     const fetchFromAPI = async () => {
       setLoading(true);
       try {
@@ -69,9 +82,8 @@ function PokemonList({ searchTerm }) {
     };
 
     fetchFromAPI();
-  }, [searchTerm, pokemons]);
+  }, [searchTerm, allPokemonNames]);
 
-  // Decide qual lista mostrar
   const listToShow = searchResults !== null ? searchResults : pokemons;
 
   return (
@@ -85,10 +97,11 @@ function PokemonList({ searchTerm }) {
           <PokemonCard key={p.id} pokemon={p} />
         ))}
 
-        {loading && <p style={{ textAlign: "center", width: "100%" }}>Carregando...</p>}
+        {loading && (
+          <p style={{ textAlign: "center", width: "100%" }}>Carregando...</p>
+        )}
       </div>
 
-      {/* Botão só aparece se não estiver buscando */}
       {searchResults === null && (
         <div style={{ textAlign: "center", margin: "20px" }}>
           {!loading && (
